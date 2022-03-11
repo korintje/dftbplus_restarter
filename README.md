@@ -13,7 +13,7 @@ Python scripts to instantly prepare input files to restart DFTB+ MD simulations
 ```
 python restart_filemaker.py
 ```
-This script creates a new `dftb_in.hsd` with the latest MD coordinates and velocities.
+This script creates a filesets for a new MD run which will restart from the latest atomic coordinates and velocities.
 
 To see available options: `python restart_filmaker.py --help`
 
@@ -21,7 +21,7 @@ To see available options: `python restart_filmaker.py --help`
 ```
 python restart_collector.py
 ``` 
-This script recursively combines all resulting `geo_end.xyz` into one file.
+This script recursively combines all MD results into one "geo_end.xyz" file.
 
 To see available options: `python restart_collector.py --help`
 
