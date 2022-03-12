@@ -1,10 +1,18 @@
-import os, sys, json, argparse, itertools, shutil
+import os, argparse, itertools, shutil, json
+from turtle import backward
 
-XYZ_FILENAME = "geo_end.xyz"
 GEN_FILENAME = "geo_end.gen"
 ITER_FILENAME = "iter_range.json"
+XYZ_FILENAME = "geo_end.xyz"
 RESTART_DIRNAME = "restart"
 COLLECT_DIRNAME = "collect"
+CURRENT_PATH = os.getcwd()
+
+
+# Save iteration range into file: ITER_FILENAME
+def save_iter_range(filename, iter_from):
+  with open(filename, "w") as f:
+    json.dump({"from": iter_from}, f)
 
 
 # Load iteration range from ITER_FILENAME
@@ -13,14 +21,14 @@ def load_iter_range(filename):
     with open(filename, "r") as f:
       iter_range = json.load(f)
   except:
-    iter_range = {"from": None, "until": None}
+    iter_range = {"from": None}
   return iter_range
 
 
-# Read xyz file to give frame list which have modified xyz lines
-def get_frames_from(iter_from, add_comment=""):
+# Read frame file to give frame list which have modified xyz lines
+def load_frames(frame_filename, iter_from=0, add_comment=""):
   frames = []
-  with open(XYZ_FILENAME, "r") as f:
+  with open(frame_filename, "r") as f:
     while True:
       lines = []
       header = f.readline()
@@ -52,14 +60,13 @@ def get_backindex_from_iter(frames, iter_number):
   for bi, frame in enumerate(frames[::-1]):
     if get_iter_from_frame(frame) == iter_number:
       return bi
-  print(f"MD iteration number {iter_number} is not found in the current frames")
-  sys.exit(1)
+  return None
 
 
 # Main function
 def collect(
   extra_files=[], collect_dirname=COLLECT_DIRNAME, restart_dirname=RESTART_DIRNAME,
-  properties=False, lattice=False, add_mode=False,
+  properties=False, lattice=False, add_mode=False, ignore_iterrange=False
 ):
   # Prepare additional comment line
   params = []
@@ -83,40 +90,47 @@ def collect(
 
   # Create collection directory under the current directory if not exists
   os.makedirs(collect_dirname, exist_ok=True)
+  collected_xyz = os.path.join(collect_dirname, XYZ_FILENAME)
 
   # Recursively append restart MD results
   current_iter = 0
   collected_frames = []
+
+  # Read exsiting collected frames if add-mode is True
+  if add_mode and os.path.isfile(collected_xyz):
+    frames = load_frames(collected_xyz)
+    collected_frames += frames
+    current_iter = get_iter_from_frame(frames[-1])
+
   while True:
-    
+
     # If no XYZ_FILENAME in the current directory, break loop
     if not os.path.exists(XYZ_FILENAME):
       break
     
     # Append frames of the current run
-    iter_range = load_iter_range(ITER_FILENAME)
-    iter_from = iter_range["from"]
-    iter_until = iter_range["until"]
-    if not iter_from:
+    iter_from = load_iter_range(ITER_FILENAME)["from"]
+    if (iter_from is None) or (ignore_iterrange):
       iter_from = current_iter
-    frames = get_frames_from(iter_from, add_comment=comment)
-    collected_frames += frames
-    current_iter = iter_until
-    
-    # If no restart directory in the current directory, break loop
-    if os.path.isdir(restart_dirname) is False:
-      break
+    frames = load_frames(XYZ_FILENAME, iter_from=iter_from, add_comment=comment)
+    backward_index = get_backindex_from_iter(collected_frames, iter_from)
+    if backward_index:
+      collected_frames = collected_frames[:-backward_index] + frames
+    else:
+      collected_frames += frames
+    current_iter = get_iter_from_frame(frames[-1])
 
-    # Remove frames which have later number than start iteration number of the next MD run
-    next_iter_range = load_iter_range(os.path.join(restart_dirname, ITER_FILENAME))
-    next_iter_from = next_iter_range["from"]
-    next_iter_until = next_iter_range["until"]
-    if next_iter_from and next_iter_until:
-      backward_index = get_backindex_from_iter(next_iter_from)
-      collected_frames = collected_frames[:-backward_index]
+    # Move to the child directory or break loop
+    if not os.path.isdir(restart_dirname):
+      break
+    if os.path.samefile(CURRENT_PATH, os.path.join(CURRENT_PATH, restart_dirname)):
+      break
+    os.chdir(restart_dirname)
+      
   
   # Save collected frames in COLLECT_DIRNAME
-  with open(os.path.join(collect_dirname, XYZ_FILENAME), "w") as f:
+  os.chdir(CURRENT_PATH)
+  with open(collected_xyz, "w") as f:
     f.writelines(list(itertools.chain.from_iterable(collected_frames)))
   for filename in extra_files:
     shutil.copy(filename, os.path.join(collect_dirname, filename))
@@ -142,7 +156,7 @@ if __name__ == "__main__":
     "--restart-dirname", "-r",
     type=str,
     default=RESTART_DIRNAME,
-    help="Directory name of the recursive restart run. Default: 'restart'."
+    help="Directory name of the recursive restart run. Default: 'restart'. If set as '.', does not collect recursively."
   )
   parser.add_argument(
     "--properties", "-p",
@@ -159,6 +173,11 @@ if __name__ == "__main__":
     action="store_true",
     help="If specified, lattice condition will be added according to the extxyz format."
   )
+  parser.add_argument(
+    "--ignore_iterrange", "-i",
+    action="store_true",
+    help="If specified, all iter range files will be ignored and simply join frames."
+  )
   args = parser.parse_args()
 
   # Run main function
@@ -169,4 +188,5 @@ if __name__ == "__main__":
     properties=args.properties,
     lattice=args.lattice,
     add_mode=args.add_mode,
+    ignore_iterrange=args.ignore_iterrange
   )

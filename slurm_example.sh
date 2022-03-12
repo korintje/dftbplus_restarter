@@ -14,7 +14,7 @@ max_steps=30000
 resubmitter()
 {
   echo "Caught timeout signal"  
-  python restart_filemaker.py -m ${max_steps} -a ${this_fname} -r
+  python restart_filemaker.py -m ${max_steps} -e ${this_fname} -r
   if [ -d restart ]; then
     cd restart
     sbatch ${this_fname}

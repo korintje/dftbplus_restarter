@@ -1,8 +1,8 @@
-import os, sys, json, argparse, shutil
-import hsd
+import os, sys, argparse, shutil, json, hsd
 
 # Global constants
-DIRNAME = "restart"
+RESTART_DIRNAME = "restart"
+COLLECT_DIRNAME = "collect"
 ITER_FILENAME = "iter_range.json"
 HSD_FILENAME = "dftb_in.hsd"
 XYZ_FILENAME = "geo_end.xyz"
@@ -12,32 +12,32 @@ THIS_FILENAME = os.path.basename(__file__)
 
 
 # Save iteration range into file: ITER_FILENAME
-def save_iter_range(filename, iter_from, iter_until):
+def save_iter_range(filename, iter_from):
   with open(filename, "w") as f:
-    json.dump({"from": iter_from, "until": iter_until}, f)
+    json.dump({"from": iter_from}, f)
 
 
-# Load iteration range from file: ITER_FILENAME
+# Load iteration range from ITER_FILENAME
 def load_iter_range(filename):
   try:
     with open(filename, "r") as f:
       iter_range = json.load(f)
   except:
-    iter_range = {"from": 0, "until": 0}
+    iter_range = {"from": 0}
   return iter_range
 
 
 # Get gen file lines
-def read_gen(filename):
+def load_gen(filename):
   with open(filename, "r") as f:
     atom = f.read().splitlines()
   return [line.split() for line in atom]
 
 
-# Read xyz file to give frame list which have modified xyz lines
-def get_frames_from():
+# Read frame file to give frame list which have modified xyz lines
+def load_frames(frame_filename, iter_from=0, add_comment=""):
   frames = []
-  with open(XYZ_FILENAME, "r") as f:
+  with open(frame_filename, "r") as f:
     while True:
       lines = []
       header = f.readline()
@@ -48,13 +48,12 @@ def get_frames_from():
       except ValueError as e:
         raise ValueError('Expected xyz header but got: {}'.format(e))
       lines.append(header)
-      f.readline()
+      comment = f.readline()
+      iter_number = int(comment[comment.find('iter:') + 5:].split()[0]) + iter_from
+      lines.append(f"iter:{iter_number} {add_comment}\n")
       for i in range(natoms):
         lines.append(f.readline())
       frames.append(lines)
-  if not frames:
-    print(f"{XYZ_FILENAME} is empty. Failed to get MD iterations.")
-    sys.exit(1)
   return frames
 
 
@@ -85,18 +84,12 @@ if __name__ == "__main__":
   parser.add_argument(
     "--dirname", "-d",
     type=str,
-    default=DIRNAME,
     help="Directory name to be created to store input files for restart run. Default: 'restart'."
   )
   parser.add_argument(
     "--recursive", "-r",
     action="store_true",
     help="If specified, this script itself will be copied to the restart directory.", 
-  )
-  parser.add_argument(
-    "--no-iterfile", "-n",
-    action="store_true",
-    help="If specified, iter range file will not be loaded or created.", 
   )
   parser.add_argument(
     "--overwrite", "-o", 
@@ -109,23 +102,20 @@ if __name__ == "__main__":
     help="If specified, create restart files even if no iter increase in the current run."
   )
   args = parser.parse_args()
+  dirname = args.dirname
   if args.overwrite:
-    dirname = "."
+    restart_dirname = "."
+    collect_dirname = dirname if dirname else COLLECT_DIRNAME
   else:
-    dirname = args.dirname
+    restart_dirname = dirname if dirname else RESTART_DIRNAME
+    collect_dirname = COLLECT_DIRNAME
   
   # Get frames from xyz file
-  frames = get_frames_from()
+  frames = load_frames(XYZ_FILENAME)
 
-  # Update iteration range in the current run
-  if args.no_iterfile:
-    iter_from = 0
-    iter_until = get_iter_from_frame(frames[-1])
-  else:
-    iter_range = load_iter_range(ITER_FILENAME)
-    iter_from = iter_range["from"]
-    iter_until = iter_from + get_iter_from_frame(frames[-1]) - 1
-    save_iter_range(ITER_FILENAME, iter_from, iter_until)
+  # Load latest iteration number in the current run
+  iter_from = load_iter_range(ITER_FILENAME)["from"]
+  iter_until = iter_from + get_iter_from_frame(frames[-1])
 
   # Stop the script if reached maximum iteration number
   iter_max = args.max_iter
@@ -140,14 +130,14 @@ if __name__ == "__main__":
 
   # Create restart directory under the current directory if not exists and copy files
   if not args.overwrite:
-    os.makedirs(dirname, exist_ok=True) 
+    os.makedirs(restart_dirname, exist_ok=True) 
     for filename in args.extra_files + [CHARGE_FILENAME]:
-      shutil.copy(filename, os.path.join(dirname, filename))
+      shutil.copy(filename, os.path.join(restart_dirname, filename))
     if args.recursive:
-      shutil.copy(THIS_FILENAME, os.path.join(dirname, THIS_FILENAME))
+      shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
   
   # Load gen of end frame
-  end_gen = read_gen(GEN_FILENAME)
+  end_gen = load_gen(GEN_FILENAME)
 
   # Get velocities of the end frame
   end_frame = [line.split() for line in frames[-1]]
@@ -163,13 +153,17 @@ if __name__ == "__main__":
     if k == "VelocityVerlet":
       hsdinput["Driver"][k]["Velocities"] = end_velocities
       hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
-  hsd.dump(hsdinput, os.path.join(dirname, HSD_FILENAME))
+  hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
 
   # Write updated iter range file
-  if not args.no_iterfile:
-    save_iter_range(os.path.join(dirname, ITER_FILENAME), iter_until, None)
+  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_until)
 
-  # Collect frames if overwrite mode
+  # Append frames to the file in collect directory if overwrite mode
   if args.overwrite:
     import restart_collector
-    restart_collector.collect()
+    restart_collector.collect(
+      extra_files=args.extra_files,
+      restart_dirname=restart_dirname,
+      collect_dirname=collect_dirname, 
+      add_mode=True,
+    )
