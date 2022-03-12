@@ -52,7 +52,17 @@ def get_frames_from():
       for i in range(natoms):
         lines.append(f.readline())
       frames.append(lines)
+  if not frames:
+    print(f"{XYZ_FILENAME} is empty. Failed to get MD iterations.")
+    sys.exit(1)
   return frames
+
+
+# Get MD iteration number from given xyz frame index
+def get_iter_from_frame(frame):
+  comment = frame[1]
+  iter_number = int(comment[comment.find('iter:') + 5:].split()[0])
+  return iter_number
 
 
 # Main process
@@ -67,7 +77,7 @@ if __name__ == "__main__":
     help="The scripts does not produce any files if MD iteration has reached this value. 0 means infinite."
   )
   parser.add_argument(
-    "--add-files", "-a",
+    "--extra-files", "-e",
     default=[],
     help="Specified files will be additionally copied to the restart directory.", 
     nargs="*"
@@ -84,9 +94,14 @@ if __name__ == "__main__":
     help="If specified, this script itself will be copied to the restart directory.", 
   )
   parser.add_argument(
+    "--no-iterfile", "-n",
+    action="store_true",
+    help="If specified, iter range file will not be loaded or created.", 
+  )
+  parser.add_argument(
     "--overwrite", "-o", 
     action="store_true",
-    help="If specified, exisiting input files will be overwritten instead of creating new directory."
+    help="If specified, input files are overwritten and output frames are collected to another directory."
   )
   parser.add_argument(
     "--force-restart", "-f",
@@ -98,13 +113,19 @@ if __name__ == "__main__":
     dirname = "."
   else:
     dirname = args.dirname
-
-  # Get iteration range in the current run
-  iter_range = load_iter_range(ITER_FILENAME)
-  iter_from = iter_range["from"]
+  
+  # Get frames from xyz file
   frames = get_frames_from()
-  iter_until = iter_from + len(frames) - 1
-  save_iter_range(ITER_FILENAME, iter_from, iter_until)
+
+  # Update iteration range in the current run
+  if args.no_iterfile:
+    iter_from = 0
+    iter_until = get_iter_from_frame(frames[-1])
+  else:
+    iter_range = load_iter_range(ITER_FILENAME)
+    iter_from = iter_range["from"]
+    iter_until = iter_from + get_iter_from_frame(frames[-1]) - 1
+    save_iter_range(ITER_FILENAME, iter_from, iter_until)
 
   # Stop the script if reached maximum iteration number
   iter_max = args.max_iter
@@ -114,13 +135,13 @@ if __name__ == "__main__":
 
   # Stop the script if no iter increase in the current run
   if (iter_from >= iter_until) and (args.force_restart is False):
-    print(f"No iteration increase in the current run.")
+    print("No iteration increase in the current run.")
     sys.exit(0)
 
   # Create restart directory under the current directory if not exists and copy files
-  if args.overwrite is False:
+  if not args.overwrite:
     os.makedirs(dirname, exist_ok=True) 
-    for filename in args.add_files + [CHARGE_FILENAME]:
+    for filename in args.extra_files + [CHARGE_FILENAME]:
       shutil.copy(filename, os.path.join(dirname, filename))
     if args.recursive:
       shutil.copy(THIS_FILENAME, os.path.join(dirname, THIS_FILENAME))
@@ -144,5 +165,11 @@ if __name__ == "__main__":
       hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
   hsd.dump(hsdinput, os.path.join(dirname, HSD_FILENAME))
 
-  # Write updated iter range file 
-  save_iter_range(os.path.join(dirname, ITER_FILENAME), iter_until, None)
+  # Write updated iter range file
+  if not args.no_iterfile:
+    save_iter_range(os.path.join(dirname, ITER_FILENAME), iter_until, None)
+
+  # Collect frames if overwrite mode
+  if args.overwrite:
+    import restart_collector
+    restart_collector.collect()
