@@ -62,8 +62,8 @@ def get_backindex_from_iter(frames, iter_number):
 
 # Main function
 def collect(
-  extra_files=[], collect_dirname=COLLECT_DIRNAME, restart_dirname=RESTART_DIRNAME,
-  properties=False, lattice=False, add_mode=False, ignore_iterrange=False
+  extra_files=[], output_dirname=COLLECT_DIRNAME, input_dirname=RESTART_DIRNAME,
+  properties=False, lattice=False, add_mode=False, disjoint=False
 ):
   # Prepare additional comment line
   params = []
@@ -86,8 +86,8 @@ def collect(
   comment = " ".join(params)
 
   # Create collection directory under the current directory if not exists
-  os.makedirs(collect_dirname, exist_ok=True)
-  collected_xyz = os.path.join(collect_dirname, XYZ_FILENAME)
+  os.makedirs(output_dirname, exist_ok=True)
+  collected_xyz = os.path.join(output_dirname, XYZ_FILENAME)
 
   # Recursively append restart MD results
   current_iter = 0
@@ -107,7 +107,7 @@ def collect(
     
     # Append frames of the current run
     iter_from = load_iter_range(ITER_FILENAME)["from"]
-    if (iter_from is None) or (ignore_iterrange):
+    if (iter_from is None) or (disjoint):
       iter_from = current_iter
     frames = load_frames(XYZ_FILENAME, iter_from=iter_from, add_comment=comment)
     backward_index = get_backindex_from_iter(collected_frames, iter_from)
@@ -118,11 +118,11 @@ def collect(
     current_iter = get_iter_from_frame(frames[-1])
 
     # Move to the child directory or break loop
-    if not os.path.isdir(restart_dirname):
+    if not os.path.isdir(input_dirname):
       break
-    if os.path.samefile(CURRENT_PATH, os.path.join(CURRENT_PATH, restart_dirname)):
+    if os.path.samefile(CURRENT_PATH, os.path.join(CURRENT_PATH, input_dirname)):
       break
-    os.chdir(restart_dirname)
+    os.chdir(input_dirname)
       
   
   # Save collected frames in COLLECT_DIRNAME
@@ -130,7 +130,7 @@ def collect(
   with open(collected_xyz, "w") as f:
     f.writelines(list(itertools.chain.from_iterable(collected_frames)))
   for filename in extra_files:
-    shutil.copy(filename, os.path.join(collect_dirname, filename))
+    shutil.copy(filename, os.path.join(output_dirname, filename))
 
 
 if __name__ == "__main__":
@@ -144,13 +144,13 @@ if __name__ == "__main__":
     nargs="*"
   )
   parser.add_argument(
-    "--collect-dirname", "-c",
+    "--output-dir", "-o",
     type=str,
     default=COLLECT_DIRNAME,
     help="Directory name of the directory in which result file will be saved. Default: 'collect'."
   )
   parser.add_argument(
-    "--restart-dirname", "-r",
+    "--input-dir", "-i",
     type=str,
     default=RESTART_DIRNAME,
     help="Directory name of the recursive restart run. Default: 'restart'. If set as '.', does not collect recursively."
@@ -166,13 +166,13 @@ if __name__ == "__main__":
     help="Lattice condition will be added according to the extxyz format."
   )
   parser.add_argument(
-    "--add_mode", "-a",
+    "--add-mode", "-a",
     action="store_true",
     help="Frames will be added under the existing frames in the collection file. \
           If their iter ranges are not consecutive, you should also specify -i."
   )
   parser.add_argument(
-    "--ignore_iterrange", "-i",
+    "--disjoint", "-d",
     action="store_true",
     help="All iter range files will be ignored and simply join frames."
   )
@@ -181,10 +181,10 @@ if __name__ == "__main__":
   # Run main function
   collect(
     extra_files=args.extra_files,
-    collect_dirname=args.collect_dirname,
-    restart_dirname=args.restart_dirname,
+    output_dirname=args.output_dir,
+    input_dirname=args.input_dir,
     properties=args.properties,
     lattice=args.lattice,
     add_mode=args.add_mode,
-    ignore_iterrange=args.ignore_iterrange
+    disjoint=args.disjoint
   )

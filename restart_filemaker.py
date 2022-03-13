@@ -87,17 +87,17 @@ if __name__ == "__main__":
     nargs="*"
   )
   parser.add_argument(
-    "--dirname", "-d",
+    "--output-dir", "-o",
     type=str,
     help="Directory name to be created to store input files for restart run."
   )
   parser.add_argument(
-    "--recursive", "-r",
+    "--self-copy", "-s",
     action="store_true",
     help="This script itself will be copied to the restart directory.", 
   )
   parser.add_argument(
-    "--overwrite", "-o", 
+    "--write-over", "-w", 
     action="store_true",
     help="Input files are overwritten and output frames are collected to the directory specified in -d option."
   )
@@ -107,8 +107,8 @@ if __name__ == "__main__":
     help="Create restart files even if no iter increase in the current run."
   )
   args = parser.parse_args()
-  dirname = args.dirname
-  if args.overwrite:
+  dirname = args.output_dir
+  if args.write_over:
     restart_dirname = "."
     collect_dirname = dirname if dirname else COLLECT_DIRNAME
   else:
@@ -123,13 +123,13 @@ if __name__ == "__main__":
   iter_until = iter_from + get_iter_from_frame(frames[-1])
   save_iter_range(ITER_FILENAME, iter_from=iter_from, iter_until=iter_until)
 
-  # Append frames to the file in collect directory if overwrite mode
-  if args.overwrite:
+  # Append frames to the file in collect directory if write_over mode
+  if args.write_over:
     import restart_collector
     restart_collector.collect(
       extra_files=args.extra_files,
-      restart_dirname=restart_dirname,
-      collect_dirname=collect_dirname, 
+      input_dirname=restart_dirname,
+      output_dirname=collect_dirname, 
       add_mode=True,
     )
 
@@ -145,11 +145,11 @@ if __name__ == "__main__":
     sys.exit(0)
 
   # Create restart directory under the current directory if not exists and copy files
-  if not args.overwrite:
+  if not args.write_over:
     os.makedirs(restart_dirname, exist_ok=True) 
     for filename in args.extra_files + [CHARGE_FILENAME]:
       shutil.copy(filename, os.path.join(restart_dirname, filename))
-    if args.recursive:
+    if args.self_copy:
       shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
   
   # Load gen of end frame
