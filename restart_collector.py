@@ -63,7 +63,7 @@ def get_backindex_from_iter(frames, iter_number):
 # Main function
 def collect(
   extra_files=[], output_dirname=COLLECT_DIRNAME, input_dirname=RESTART_DIRNAME,
-  properties=False, lattice=False, add_mode=False, disjoint=False
+  properties=False, lattice=False, add_mode=False, consequtive=False
 ):
   # Prepare additional comment line
   params = []
@@ -107,7 +107,7 @@ def collect(
     
     # Append frames of the current run
     iter_from = load_iter_range(ITER_FILENAME)["from"]
-    if (iter_from is None) or (disjoint):
+    if (iter_from is None) or (consequtive):
       iter_from = current_iter
     frames = load_frames(XYZ_FILENAME, iter_from=iter_from, add_comment=comment)
     backward_index = get_backindex_from_iter(collected_frames, iter_from)
@@ -172,9 +172,9 @@ if __name__ == "__main__":
           If their iter ranges are not consecutive, you should also specify -i."
   )
   parser.add_argument(
-    "--disjoint", "-d",
+    "--consequtive", "-c",
     action="store_true",
-    help="All iter range files will be ignored and simply join frames."
+    help="All iter range files will be ignored and simply join frames assuming they are consequtive."
   )
   args = parser.parse_args()
 
@@ -186,5 +186,5 @@ if __name__ == "__main__":
     properties=args.properties,
     lattice=args.lattice,
     add_mode=args.add_mode,
-    disjoint=args.disjoint
+    consequtive=args.consequtive
   )
