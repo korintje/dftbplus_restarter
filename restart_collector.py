@@ -168,7 +168,8 @@ if __name__ == "__main__":
   parser.add_argument(
     "--add_mode", "-a",
     action="store_true",
-    help="If specified, lattice condition will be added according to the extxyz format."
+    help="If specified, frames will be added under the existing frames in the collection file. \
+          If their iter ranges are not consecutive, you should also specify -i."
   )
   parser.add_argument(
     "--ignore_iterrange", "-i",
