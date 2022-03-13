@@ -89,22 +89,22 @@ if __name__ == "__main__":
   parser.add_argument(
     "--dirname", "-d",
     type=str,
-    help="Directory name to be created to store input files for restart run. Default: 'restart'."
+    help="Directory name to be created to store input files for restart run."
   )
   parser.add_argument(
     "--recursive", "-r",
     action="store_true",
-    help="If specified, this script itself will be copied to the restart directory.", 
+    help="This script itself will be copied to the restart directory.", 
   )
   parser.add_argument(
     "--overwrite", "-o", 
     action="store_true",
-    help="If specified, input files are overwritten and output frames are collected to another directory."
+    help="Input files are overwritten and output frames are collected to the directory specified in -d option."
   )
   parser.add_argument(
     "--force-restart", "-f",
     action="store_true",
-    help="If specified, create restart files even if no iter increase in the current run."
+    help="Create restart files even if no iter increase in the current run."
   )
   args = parser.parse_args()
   dirname = args.dirname
