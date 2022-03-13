@@ -1,5 +1,4 @@
-import os, argparse, itertools, shutil, json
-from turtle import backward
+import os, argparse, itertools, shutil
 
 GEN_FILENAME = "geo_end.gen"
 ITER_FILENAME = "iter_range.txt"

@@ -1,4 +1,4 @@
-import os, sys, argparse, shutil, json, hsd
+import os, sys, argparse, shutil, hsd
 
 # Global constants
 RESTART_DIRNAME = "restart"
