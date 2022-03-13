@@ -1,5 +1,5 @@
 # dftbplus_restarter
-Python scripts to instantly prepare input files to restart DFTB+ MD simulations
+Python scripts to instantly prepare input files to restart [DFTB+](https://dftbplus.org/) MD simulations
 
 # Requirements
 - [hsd-python](https://github.com/dftbplus/hsd-python)
