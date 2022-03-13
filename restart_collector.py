@@ -2,26 +2,24 @@ import os, argparse, itertools, shutil, json
 from turtle import backward
 
 GEN_FILENAME = "geo_end.gen"
-ITER_FILENAME = "iter_range.json"
+ITER_FILENAME = "iter_range.txt"
 XYZ_FILENAME = "geo_end.xyz"
 RESTART_DIRNAME = "restart"
 COLLECT_DIRNAME = "collect"
 CURRENT_PATH = os.getcwd()
 
 
-# Save iteration range into file: ITER_FILENAME
-def save_iter_range(filename, iter_from):
-  with open(filename, "w") as f:
-    json.dump({"from": iter_from}, f)
-
-
 # Load iteration range from ITER_FILENAME
 def load_iter_range(filename):
   try:
     with open(filename, "r") as f:
-      iter_range = json.load(f)
+      first = f.readline().strip()
+      iter_from =  int(first) if first else None
+      second = f.readline().strip()
+      iter_until =  int(second) if second else None
+      iter_range = {"from": iter_from, "until": iter_until}
   except:
-    iter_range = {"from": None}
+    iter_range = {"from": None, "until": None}
   return iter_range
 
 

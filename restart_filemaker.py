@@ -3,7 +3,7 @@ import os, sys, argparse, shutil, json, hsd
 # Global constants
 RESTART_DIRNAME = "restart"
 COLLECT_DIRNAME = "collect"
-ITER_FILENAME = "iter_range.json"
+ITER_FILENAME = "iter_range.txt"
 HSD_FILENAME = "dftb_in.hsd"
 XYZ_FILENAME = "geo_end.xyz"
 GEN_FILENAME = "geo_end.gen"
@@ -12,18 +12,23 @@ THIS_FILENAME = os.path.basename(__file__)
 
 
 # Save iteration range into file: ITER_FILENAME
-def save_iter_range(filename, iter_from):
+def save_iter_range(filename, iter_from="", iter_until=""):
   with open(filename, "w") as f:
-    json.dump({"from": iter_from}, f)
+    f.write(str(iter_from) + "\n")
+    f.write(str(iter_until))
 
 
 # Load iteration range from ITER_FILENAME
 def load_iter_range(filename):
   try:
     with open(filename, "r") as f:
-      iter_range = json.load(f)
+      first = f.readline().strip()
+      iter_from =  int(first) if first else 0
+      second = f.readline().strip()
+      iter_until =  int(second) if second else 0
+      iter_range = {"from": iter_from, "until": iter_until}
   except:
-    iter_range = {"from": 0}
+    iter_range = {"from": 0, "until": 0}
   return iter_range
 
 
@@ -113,9 +118,20 @@ if __name__ == "__main__":
   # Get frames from xyz file
   frames = load_frames(XYZ_FILENAME)
 
-  # Load latest iteration number in the current run
+  # Load and update latest iteration number in the current run
   iter_from = load_iter_range(ITER_FILENAME)["from"]
   iter_until = iter_from + get_iter_from_frame(frames[-1])
+  save_iter_range(ITER_FILENAME, iter_from=iter_from, iter_until=iter_until)
+
+  # Append frames to the file in collect directory if overwrite mode
+  if args.overwrite:
+    import restart_collector
+    restart_collector.collect(
+      extra_files=args.extra_files,
+      restart_dirname=restart_dirname,
+      collect_dirname=collect_dirname, 
+      add_mode=True,
+    )
 
   # Stop the script if reached maximum iteration number
   iter_max = args.max_iter
@@ -156,14 +172,4 @@ if __name__ == "__main__":
   hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
 
   # Write updated iter range file
-  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_until)
-
-  # Append frames to the file in collect directory if overwrite mode
-  if args.overwrite:
-    import restart_collector
-    restart_collector.collect(
-      extra_files=args.extra_files,
-      restart_dirname=restart_dirname,
-      collect_dirname=collect_dirname, 
-      add_mode=True,
-    )
+  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_from=iter_until)
