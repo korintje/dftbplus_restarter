@@ -99,7 +99,7 @@ if __name__ == "__main__":
   parser.add_argument(
     "--write-over", "-w", 
     action="store_true",
-    help="Input files are overwritten and output frames are collected to the directory specified in -d option."
+    help="Input files are overwritten and output frames are collected to the directory specified in -o option."
   )
   parser.add_argument(
     "--force-restart", "-f",
