@@ -158,23 +158,23 @@ if __name__ == "__main__":
   parser.add_argument(
     "--properties", "-p",
     action="store_true",
-    help="If specified, properties line will be added according to the extxyz format."
+    help="Properties line will be added according to the extxyz format."
   )
   parser.add_argument(
     "--lattice", "-l",
     action="store_true",
-    help="If specified, lattice condition will be added according to the extxyz format."
+    help="Lattice condition will be added according to the extxyz format."
   )
   parser.add_argument(
     "--add_mode", "-a",
     action="store_true",
-    help="If specified, frames will be added under the existing frames in the collection file. \
+    help="Frames will be added under the existing frames in the collection file. \
           If their iter ranges are not consecutive, you should also specify -i."
   )
   parser.add_argument(
     "--ignore_iterrange", "-i",
     action="store_true",
-    help="If specified, all iter range files will be ignored and simply join frames."
+    help="All iter range files will be ignored and simply join frames."
   )
   args = parser.parse_args()
 
