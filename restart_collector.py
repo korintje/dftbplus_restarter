@@ -169,7 +169,7 @@ if __name__ == "__main__":
     "--add-mode", "-a",
     action="store_true",
     help="Frames will be added under the existing frames in the collection file. \
-          If their iter ranges are not consecutive, you should also specify -i."
+          If their iter ranges are not consecutive, you should also specify -c."
   )
   parser.add_argument(
     "--consequtive", "-c",
