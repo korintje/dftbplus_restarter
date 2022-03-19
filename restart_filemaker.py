@@ -69,6 +69,88 @@ def get_iter_from_frame(frame):
   return iter_number
 
 
+# Read maximum iteration number from .hsd file
+def get_max_iter_from_hsd():
+  hsdinput = hsd.load(HSD_FILENAME)
+  steps = hsdinput["Driver"]["VelocityVerlet"]["Steps"]
+  max_iter = int(steps) if steps else 0
+  return max_iter
+
+
+# Main function
+def make_files(
+  max_iter=0, extra_files=[], output_dir=None, self_copy=False,
+  write_over=False, force_restart=False,
+):
+
+# Set output directory name
+  dirname = output_dir
+  if write_over:
+    restart_dirname = "."
+    collect_dirname = dirname if dirname else COLLECT_DIRNAME
+  else:
+    restart_dirname = dirname if dirname else RESTART_DIRNAME
+    collect_dirname = COLLECT_DIRNAME
+  
+  # Get frames from xyz file
+  frames = load_frames(XYZ_FILENAME)
+
+  # Load and update latest iteration number in the current run
+  iter_from = load_iter_range(ITER_FILENAME)["from"]
+  iter_until = iter_from + get_iter_from_frame(frames[-1])
+  save_iter_range(ITER_FILENAME, iter_from=iter_from, iter_until=iter_until)
+
+  # Append frames to the file in collect directory if write_over mode
+  if write_over:
+    import restart_collector
+    restart_collector.collect(
+      extra_files=extra_files,
+      input_dirname=restart_dirname,
+      output_dirname=collect_dirname, 
+      add_mode=True,
+    )
+
+  # Stop the script if reached maximum iteration number
+  if (max_iter != 0) and (iter_until >= max_iter):
+    print(f"MD simulation has reached max iteration number: {max_iter}")
+    sys.exit(0)
+
+  # Stop the script if no iter increase in the current run
+  if (iter_from >= iter_until) and (force_restart is False):
+    print("No iteration increase in the current run.")
+    sys.exit(0)
+
+  # Create restart directory under the current directory if not exists and copy files
+  if not write_over:
+    os.makedirs(restart_dirname, exist_ok=True) 
+    for filename in extra_files + [CHARGE_FILENAME]:
+      shutil.copy(filename, os.path.join(restart_dirname, filename))
+    if self_copy:
+      shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
+  
+  # Load gen of end frame
+  end_gen = load_gen(GEN_FILENAME)
+
+  # Get velocities of the end frame
+  end_frame = [line.split() for line in frames[-1]]
+  end_velocities = [vec[5:8] for vec in end_frame[2:]]
+
+  # Update and write hsd input file
+  hsdinput = hsd.load(HSD_FILENAME)
+  hsdinput["Geometry"]["GenFormat"] = end_gen
+  for k in hsdinput["Hamiltonian"].keys():
+    if k == "DFTB":
+      hsdinput["Hamiltonian"][k]["ReadInitialCharges"] = True
+  for k in hsdinput["Driver"].keys():
+    if k == "VelocityVerlet":
+      hsdinput["Driver"][k]["Velocities"] = end_velocities
+      hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
+  hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
+
+  # Write updated iter range file
+  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_from=iter_until)
+
+
 # Main process
 if __name__ == "__main__":
 
@@ -76,8 +158,8 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument(
     "--max-iter", "-m",
-    type=int,
     default=0,
+    type=int,
     help="The scripts does not produce any files if MD iteration has reached this value. 0 means infinite."
   )
   parser.add_argument(
@@ -107,69 +189,12 @@ if __name__ == "__main__":
     help="Create restart files even if no iter increase in the current run."
   )
   args = parser.parse_args()
-  dirname = args.output_dir
-  if args.write_over:
-    restart_dirname = "."
-    collect_dirname = dirname if dirname else COLLECT_DIRNAME
-  else:
-    restart_dirname = dirname if dirname else RESTART_DIRNAME
-    collect_dirname = COLLECT_DIRNAME
   
-  # Get frames from xyz file
-  frames = load_frames(XYZ_FILENAME)
-
-  # Load and update latest iteration number in the current run
-  iter_from = load_iter_range(ITER_FILENAME)["from"]
-  iter_until = iter_from + get_iter_from_frame(frames[-1])
-  save_iter_range(ITER_FILENAME, iter_from=iter_from, iter_until=iter_until)
-
-  # Append frames to the file in collect directory if write_over mode
-  if args.write_over:
-    import restart_collector
-    restart_collector.collect(
-      extra_files=args.extra_files,
-      input_dirname=restart_dirname,
-      output_dirname=collect_dirname, 
-      add_mode=True,
-    )
-
-  # Stop the script if reached maximum iteration number
-  iter_max = args.max_iter
-  if (iter_max != 0) and (iter_until >= iter_max):
-    print(f"MD simulation has reached max iteration number: {iter_max}")
-    sys.exit(0)
-
-  # Stop the script if no iter increase in the current run
-  if (iter_from >= iter_until) and (args.force_restart is False):
-    print("No iteration increase in the current run.")
-    sys.exit(0)
-
-  # Create restart directory under the current directory if not exists and copy files
-  if not args.write_over:
-    os.makedirs(restart_dirname, exist_ok=True) 
-    for filename in args.extra_files + [CHARGE_FILENAME]:
-      shutil.copy(filename, os.path.join(restart_dirname, filename))
-    if args.self_copy:
-      shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
-  
-  # Load gen of end frame
-  end_gen = load_gen(GEN_FILENAME)
-
-  # Get velocities of the end frame
-  end_frame = [line.split() for line in frames[-1]]
-  end_velocities = [vec[5:8] for vec in end_frame[2:]]
-
-  # Update and write hsd input file
-  hsdinput = hsd.load(HSD_FILENAME)
-  hsdinput["Geometry"]["GenFormat"] = end_gen
-  for k in hsdinput["Hamiltonian"].keys():
-    if k == "DFTB":
-      hsdinput["Hamiltonian"][k]["ReadInitialCharges"] = True
-  for k in hsdinput["Driver"].keys():
-    if k == "VelocityVerlet":
-      hsdinput["Driver"][k]["Velocities"] = end_velocities
-      hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
-  hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
-
-  # Write updated iter range file
-  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_from=iter_until)
+  make_files(
+    max_iter=args.max_iter,
+    extra_files=args.extra_files,
+    output_dir=args.output_dir,
+    self_copy=args.self_copy,
+    write_over=args.write_over,
+    force_restart=args.force_restart,    
+  )
