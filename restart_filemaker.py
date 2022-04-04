@@ -33,10 +33,10 @@ def load_iter_range(filename):
 
 
 # Get gen file lines
-def load_gen(filename):
-  with open(filename, "r") as f:
-    atom = f.read().splitlines()
-  return [line.split() for line in atom]
+def load_gen():
+  with open(GEN_FILENAME, "r") as f:
+    lines = f.read().splitlines()
+  return [line.split() for line in lines]
 
 
 # Read frame file to give frame list which have modified xyz lines
@@ -62,11 +62,43 @@ def load_frames(frame_filename, iter_from=0, add_comment=""):
   return frames
 
 
+# Get hashmap; key = element, value = index number of gen
+def get_element_indexes():
+  atom = load_gen()
+  elements = atom[1]
+  element_indexes = {element: index + 1 for index, element in enumerate(elements)}
+  return element_indexes
+
+
+# Get element lists from gen
+def get_elements():
+  atom = load_gen()
+  elements = atom[1]
+  return elements
+
+
+# get periodicity from gen file
+def get_geometry_type():
+  atom = load_gen()
+  geometry_type = atom[0][1]
+  return geometry_type
+
+
 # Get MD iteration number from given xyz frame index
 def get_iter_from_frame(frame):
   comment = frame[1]
   iter_number = int(comment[comment.find('iter:') + 5:].split()[0])
   return iter_number
+
+
+# Get frame index from MD iteration number
+def get_index_from_iter(frames, iter_number):
+  for i, frame in enumerate(frames):
+    if get_iter_from_frame(frame) == iter_number:
+      return i
+  print("The MD iter number you specified is not found. \
+    The last iter number is used instead.")
+  return -1
 
 
 # Read maximum iteration number from .hsd file
@@ -80,7 +112,7 @@ def get_max_iter_from_hsd():
 # Main function
 def make_files(
   max_iter=0, extra_files=[], output_dir=None, self_copy=False,
-  write_over=False, force_restart=False,
+  write_over=False, force_restart=False, restart_from=0,
 ):
 
 # Set output directory name
@@ -127,28 +159,62 @@ def make_files(
       shutil.copy(filename, os.path.join(restart_dirname, filename))
     if self_copy:
       shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
-  
-  # Load gen of end frame
-  end_gen = load_gen(GEN_FILENAME)
 
-  # Get velocities of the end frame
-  end_frame = [line.split() for line in frames[-1]]
-  end_velocities = [vec[5:8] for vec in end_frame[2:]]
-
-  # Update and write hsd input file
+  # Load hsd input file
   hsdinput = hsd.load(HSD_FILENAME)
-  hsdinput["Geometry"]["GenFormat"] = end_gen
+  hsdinput["Geometry"].pop("GenFormat", None)
+
+  # Set element type names
+  hsdinput["Geometry"]["TypeNames"] = get_elements()
+
+  # Set periodicity and cell information  
+  is_periodic = True if get_geometry_type() in ["S", "F"] else False
+  hsdinput["Geometry"]["Periodic"] = is_periodic
+  if is_periodic:
+    lattice_vectors = []
+    for cell_line in load_gen()[-3:]:
+      vec = [float(v) for v in cell_line]
+      lattice_vectors.append(vec)
+    hsdinput["Geometry"]["LatticeVectors"] = lattice_vectors
+    hsdinput["Geometry"]["LatticeVectors.attrib"] = "Angstrom"
+  
+  # Set types and coordinates of atoms
+  if restart_from == -1:
+    frame_index = -1
+  else:
+    frame_index = get_index_from_iter(frames, restart_from)
+  str_frame = frames[frame_index]
+  frame = [line.split() for line in str_frame]
+  element_names = [vec[0] for vec in frame[2:]]
+  indexes = [get_element_indexes()[element] for element in element_names]
+  xyzs = [vec[1:4] for vec in frame[2:]]
+  element_xyzs = []
+  for (index, xyz) in zip(indexes, xyzs):
+    xyz = [float(string) for string in xyz]
+    atom = [index] + xyz
+    element_xyzs.append(atom)
+  hsdinput["Geometry"]["TypesAndCoordinates"] = element_xyzs
+
+  # Set an initial charge setting
   for k in hsdinput["Hamiltonian"].keys():
     if k == "DFTB":
       hsdinput["Hamiltonian"][k]["ReadInitialCharges"] = True
+
+  # Set velocities of atoms
+  velocities = [vec[5:8] for vec in frame[2:]]
   for k in hsdinput["Driver"].keys():
     if k == "VelocityVerlet":
-      hsdinput["Driver"][k]["Velocities"] = end_velocities
+      hsdinput["Driver"][k]["Velocities"] = velocities
       hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
+
+  # Update hsd input file
   hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
 
   # Write updated iter range file
-  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_from=iter_until)
+  save_iter_range(
+    os.path.join(restart_dirname, ITER_FILENAME),
+    iter_from = iter_from + get_iter_from_frame(str_frame)
+  )
 
 
 # Main process
@@ -184,9 +250,10 @@ if __name__ == "__main__":
     help="Input files are overwritten and output frames are collected to the directory specified in -o option."
   )
   parser.add_argument(
-    "--force-restart", "-f",
-    action="store_true",
-    help="Create restart files even if no iter increase in the current run."
+    "--restart-from", "-f",
+    default=-1,
+    type=int,
+    help="Restart from the specified MD iter number. -1 means the last iter number."
   )
   args = parser.parse_args()
   
@@ -196,5 +263,6 @@ if __name__ == "__main__":
     output_dir=args.output_dir,
     self_copy=args.self_copy,
     write_over=args.write_over,
-    force_restart=args.force_restart,    
+    force_restart=False,
+    restart_from=args.restart_from,
   )
