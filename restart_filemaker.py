@@ -112,7 +112,7 @@ def get_max_iter_from_hsd():
 # Main function
 def make_files(
   max_iter=0, extra_files=[], output_dir=None, self_copy=False,
-  write_over=False, force_restart=False, restart_from=0,
+  write_over=False, force_restart=False, restart_from=-1,
 ):
 
 # Set output directory name
@@ -194,11 +194,17 @@ def make_files(
     atom = [index] + xyz
     element_xyzs.append(atom)
   hsdinput["Geometry"]["TypesAndCoordinates"] = element_xyzs
+  hsdinput["Geometry"]["TypesAndCoordinates.attrib"] = "Angstrom"
 
   # Set an initial charge setting
   for k in hsdinput["Hamiltonian"].keys():
     if k == "DFTB":
-      hsdinput["Hamiltonian"][k]["ReadInitialCharges"] = True
+      if restart_from == -1:
+        hsdinput["Hamiltonian"][k]["ReadInitialCharges"] = True
+      else:
+        charges = [vec[4:5] for vec in frame[2:]]
+        hsdinput["Hamiltonian"]["DFTB"]["InitialCharges"] = {}
+        hsdinput["Hamiltonian"]["DFTB"]["InitialCharges"]["AllAtomCharges"] = charges
 
   # Set velocities of atoms
   velocities = [vec[5:8] for vec in frame[2:]]
