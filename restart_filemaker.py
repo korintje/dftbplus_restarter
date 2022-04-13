@@ -7,83 +7,144 @@ ITER_FILENAME = "iter_range.txt"
 HSD_FILENAME = "dftb_in.hsd"
 XYZ_FILENAME = "geo_end.xyz"
 GEN_FILENAME = "geo_end.gen"
-CHARGE_FILENAME = "charges.bin"
+CHARGE_FILENAMES = ["charges.bin", "charges.dat"]
 THIS_FILENAME = os.path.basename(__file__)
 
 
-# Save iteration range into file: ITER_FILENAME
-def save_iter_range(filename, iter_from="", iter_until=""):
-  with open(filename, "w") as f:
-    f.write(str(iter_from) + "\n")
-    f.write(str(iter_until))
+class Atom():
+  """Class of an atom in a MD frame"""
+  def __init__(self, element, coord, charge, velocity):
+    self.element = element
+    self.coord = coord
+    self.charge = charge
+    self.velocity = velocity
 
 
-# Load iteration range from ITER_FILENAME
-def load_iter_range(filename):
-  try:
-    with open(filename, "r") as f:
-      first = f.readline().strip()
-      iter_from =  int(first) if first else 0
-      second = f.readline().strip()
-      iter_until =  int(second) if second else 0
-      iter_range = {"from": iter_from, "until": iter_until}
-  except:
-    iter_range = {"from": 0, "until": 0}
-  return iter_range
+class MDFrame():
+  """Class of a MD frame"""
+  def __init__(self, iter_num, atom_count, comment, atoms):
+    self.iter_num = iter_num
+    self.atom_count = atom_count
+    self.comment = comment
+    self.atoms = atoms
+  
+  @classmethod
+  def from_xyz_lines(cls, lines, iter_from=0, add_comment=""):
+    atom_count = int(lines[0])
+    comment = lines[1]
+    iter_num = int(comment[comment.find('iter:') + 5:].split()[0]) + iter_from
+    comment = f"iter:{iter_num} {add_comment}\n"
+    atom_params = [line.split() for line in lines[2:]]
+    atoms = []
+    for atom_param in atom_params:
+      atoms.append(
+        Atom(
+          atom_param[0],
+          [float(v) for v in atom_param[1:4]],
+          float(atom_param[4]),
+          [float(v) for v in atom_param[5:8]]
+        )
+      )
+    return MDFrame(iter_num, atom_count, comment, atoms)
 
 
-# Get gen file lines
-def load_gen(filename):
-  with open(filename, "r") as f:
-    atom = f.read().splitlines()
-  return [line.split() for line in atom]
-
-
-# Read frame file to give frame list which have modified xyz lines
-def load_frames(frame_filename, iter_from=0, add_comment=""):
-  frames = []
-  with open(frame_filename, "r") as f:
-    while True:
-      lines = []
-      header = f.readline()
-      if header.strip() == '':
-        break
-      try:
-        natoms = int(header)
-      except ValueError as e:
-        raise ValueError('Expected xyz header but got: {}'.format(e))
-      lines.append(header)
-      comment = f.readline()
-      iter_number = int(comment[comment.find('iter:') + 5:].split()[0]) + iter_from
-      lines.append(f"iter:{iter_number} {add_comment}\n")
-      for i in range(natoms):
+class MDTrajectory():
+  """Class of collection of MD frames"""
+  def __init__(self, frames):
+    self.frames = frames
+  
+  @classmethod
+  def from_xyz(cls, filepath, iter_from=0):
+    """load MD frames from .xyz file"""
+    frames = []
+    with open(filepath, "r") as f:
+      while True:
+        lines = []
+        header = f.readline()
+        if header.strip() == '':
+          break
+        try:
+          atom_count = int(header)
+        except ValueError as e:
+          raise ValueError('Expected xyz header but got: {}'.format(e))
+        lines.append(atom_count)
         lines.append(f.readline())
-      frames.append(lines)
-  return frames
+        for _i in range(atom_count):
+          lines.append(f.readline())
+        frames.append(
+          MDFrame.from_xyz_lines(lines, iter_from=iter_from)
+        )
+    return MDTrajectory(frames)
+      
+  def load_geometry(self, gen_filepath):
+    """load periodicity information from gen file"""
+    with open(gen_filepath, "r") as f:
+      lines = f.read().splitlines()
+      self.geometry_type = lines[0].split()[1]
+      self.is_periodic = True if self.geometry_type in ["S", "F"] else False
+      if self.is_periodic:
+        self.lattice_vectors = [
+          [float(v) for v in line.split()] for line in lines[-3:]
+        ]
+      else:
+        self.lattice_vectors = [[], [], []]
+
+  def get_index_from_iter(self, iter_num):
+    """Get MD frame index from the iter number"""
+    for i, frame in enumerate(self.frames):
+      if frame.iter_num == iter_num:
+        return i
+    print("The specified MD iter number is not found.")
+    return -1
+
+  def get_all_elements(self):
+    """Return list of used elements in the trajectory"""
+    elements = []
+    for atom in self.frames[0].atoms:
+      element = atom.element
+      if not element in elements:
+        elements.append(element)
+    return elements
 
 
-# Get MD iteration number from given xyz frame index
-def get_iter_from_frame(frame):
-  comment = frame[1]
-  iter_number = int(comment[comment.find('iter:') + 5:].split()[0])
-  return iter_number
+class IterRange():
 
+  def __init__(self, iter_from, iter_until):
+    self._from = iter_from
+    self._until = iter_until
 
-# Read maximum iteration number from .hsd file
-def get_max_iter_from_hsd():
-  hsdinput = hsd.load(HSD_FILENAME)
-  steps = hsdinput["Driver"]["VelocityVerlet"]["Steps"]
-  max_iter = int(steps) if steps else 0
-  return max_iter
+  @classmethod
+  def load_file(cls, filename):
+    """Load iteration range from ITER_FILENAME"""
+    try:
+      with open(filename, "r") as f:
+        first = f.readline().strip()
+        iter_from =  int(first) if first else 0
+        second = f.readline().strip()
+        iter_until =  int(second) if second else 0
+        iter_range = IterRange(iter_from, iter_until)
+    except:
+      iter_range = IterRange(0, 0)
+    return iter_range
+  
+  def update(self, traj):
+    """Update iteration range by reading frames"""
+    self._until = self._from + traj.frames[-1].iter_num
+
+  def save(self, filename):
+    """Save iteration range into file"""
+    with open(filename, "w") as f:
+      f.write(str(self._from) + "\n")
+      f.write(str(self._until))
 
 
 # Main function
 def make_files(
   max_iter=0, extra_files=[], output_dir=None, self_copy=False,
-  write_over=False, force_restart=False,
+  write_over=False, force_restart=False, restart_from=-1,
 ):
 
-# Set output directory name
+  # Set output directory name
   dirname = output_dir
   if write_over:
     restart_dirname = "."
@@ -93,12 +154,13 @@ def make_files(
     collect_dirname = COLLECT_DIRNAME
   
   # Get frames from xyz file
-  frames = load_frames(XYZ_FILENAME)
+  traj = MDTrajectory.from_xyz(XYZ_FILENAME)
+  traj.load_geometry(GEN_FILENAME)
 
   # Load and update latest iteration number in the current run
-  iter_from = load_iter_range(ITER_FILENAME)["from"]
-  iter_until = iter_from + get_iter_from_frame(frames[-1])
-  save_iter_range(ITER_FILENAME, iter_from=iter_from, iter_until=iter_until)
+  iter_range = IterRange.load_file(ITER_FILENAME)
+  iter_range.update(traj)
+  iter_range.save(ITER_FILENAME)
 
   # Append frames to the file in collect directory if write_over mode
   if write_over:
@@ -111,44 +173,72 @@ def make_files(
     )
 
   # Stop the script if reached maximum iteration number
-  if (max_iter != 0) and (iter_until >= max_iter):
+  if (max_iter != 0) and (iter_range._until >= max_iter):
     print(f"MD simulation has reached max iteration number: {max_iter}")
     sys.exit(0)
 
   # Stop the script if no iter increase in the current run
-  if (iter_from >= iter_until) and (force_restart is False):
+  if (iter_range._from >= iter_range._until) and (force_restart is False):
     print("No iteration increase in the current run.")
     sys.exit(0)
 
   # Create restart directory under the current directory if not exists and copy files
   if not write_over:
-    os.makedirs(restart_dirname, exist_ok=True) 
-    for filename in extra_files + [CHARGE_FILENAME]:
-      shutil.copy(filename, os.path.join(restart_dirname, filename))
+    os.makedirs(restart_dirname, exist_ok=True)
+    for filename in extra_files + CHARGE_FILENAMES:
+      if os.path.exists(filename):
+        shutil.copy(filename, os.path.join(restart_dirname, filename))
     if self_copy:
       shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
-  
-  # Load gen of end frame
-  end_gen = load_gen(GEN_FILENAME)
 
-  # Get velocities of the end frame
-  end_frame = [line.split() for line in frames[-1]]
-  end_velocities = [vec[5:8] for vec in end_frame[2:]]
-
-  # Update and write hsd input file
+  # Load hsd input file
   hsdinput = hsd.load(HSD_FILENAME)
-  hsdinput["Geometry"]["GenFormat"] = end_gen
-  for k in hsdinput["Hamiltonian"].keys():
-    if k == "DFTB":
-      hsdinput["Hamiltonian"][k]["ReadInitialCharges"] = True
+  hsdinput["Geometry"].pop("GenFormat", None)
+
+  # Set element type names
+  elements = traj.get_all_elements()
+  hsdinput["Geometry"]["TypeNames"] = elements
+
+  # Set periodicity and cell information
+  hsdinput["Geometry"]["Periodic"] = traj.is_periodic
+  if traj.is_periodic:
+    hsdinput["Geometry"]["LatticeVectors"] = traj.lattice_vectors
+    hsdinput["Geometry"]["LatticeVectors.attrib"] = "Angstrom"
+  
+  # Get fram from the specified index
+  if restart_from == -1:
+    frame_index = -1
+  else:
+    frame_index = traj.get_index_from_iter(restart_from)
+  frame = traj.frames[frame_index]
+
+  # Set atom ids and coords
+  atom_descriptions = []
+  for atom in frame.atoms:
+    element_id = elements.index(atom.element) + 1
+    atom_descriptions.append([str(element_id)] + atom.coord)
+  hsdinput["Geometry"]["TypesAndCoordinates"] = atom_descriptions
+  hsdinput["Geometry"]["TypesAndCoordinates.attrib"] = "Angstrom"
+
+  # Set initial charges when restarting from the last MD iteration
+  if restart_from == -1:
+    hsdinput["Hamiltonian"]["DFTB"]["ReadInitialCharges"] = True
+  else:
+    hsdinput["Hamiltonian"]["DFTB"]["ReadInitialCharges"] = False
+
+  # Set velocities of atoms
+  velocities = [atom.velocity for atom in frame.atoms]
   for k in hsdinput["Driver"].keys():
     if k == "VelocityVerlet":
-      hsdinput["Driver"][k]["Velocities"] = end_velocities
+      hsdinput["Driver"][k]["Velocities"] = velocities
       hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
+
+  # Update hsd input file
   hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
 
   # Write updated iter range file
-  save_iter_range(os.path.join(restart_dirname, ITER_FILENAME), iter_from=iter_until)
+  with open(os.path.join(restart_dirname, ITER_FILENAME), "w") as f:
+    f.write(str(iter_range._from + frame.iter_num))
 
 
 # Main process
@@ -184,9 +274,10 @@ if __name__ == "__main__":
     help="Input files are overwritten and output frames are collected to the directory specified in -o option."
   )
   parser.add_argument(
-    "--force-restart", "-f",
-    action="store_true",
-    help="Create restart files even if no iter increase in the current run."
+    "--restart-from", "-f",
+    default=-1,
+    type=int,
+    help="Restart from the specified MD iter number. -1 means the last iter number."
   )
   args = parser.parse_args()
   
@@ -196,5 +287,6 @@ if __name__ == "__main__":
     output_dir=args.output_dir,
     self_copy=args.self_copy,
     write_over=args.write_over,
-    force_restart=args.force_restart,    
+    force_restart=False,
+    restart_from=args.restart_from,
   )
