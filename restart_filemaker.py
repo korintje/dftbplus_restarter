@@ -221,7 +221,11 @@ def make_files(
   hsdinput["Geometry"]["TypesAndCoordinates.attrib"] = "Angstrom"
 
   # Set initial charges when restarting from the last MD iteration
-  if restart_from == -1:
+  charges_file_exists = False
+  for filename in CHARGE_FILENAMES:
+    if os.path.exists(os.path.join(restart_dirname, filename)):
+      charges_file_exists = True 
+  if restart_from == -1 and charges_file_exists:
     hsdinput["Hamiltonian"]["DFTB"]["ReadInitialCharges"] = True
   else:
     hsdinput["Hamiltonian"]["DFTB"]["ReadInitialCharges"] = False
