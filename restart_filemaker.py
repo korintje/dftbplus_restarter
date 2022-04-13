@@ -7,6 +7,7 @@ ITER_FILENAME = "iter_range.txt"
 HSD_FILENAME = "dftb_in.hsd"
 XYZ_FILENAME = "geo_end.xyz"
 GEN_FILENAME = "geo_end.gen"
+CHARGE_FILENAMES = ["charges.bin", "charges.dat"]
 THIS_FILENAME = os.path.basename(__file__)
 
 
@@ -183,9 +184,10 @@ def make_files(
 
   # Create restart directory under the current directory if not exists and copy files
   if not write_over:
-    os.makedirs(restart_dirname, exist_ok=True) 
-    for filename in extra_files:
-      shutil.copy(filename, os.path.join(restart_dirname, filename))
+    os.makedirs(restart_dirname, exist_ok=True)
+    for filename in extra_files + CHARGE_FILENAMES:
+      if os.path.exists(filename):
+        shutil.copy(filename, os.path.join(restart_dirname, filename))
     if self_copy:
       shutil.copy(THIS_FILENAME, os.path.join(restart_dirname, THIS_FILENAME))
 
@@ -218,10 +220,11 @@ def make_files(
   hsdinput["Geometry"]["TypesAndCoordinates"] = atom_descriptions
   hsdinput["Geometry"]["TypesAndCoordinates.attrib"] = "Angstrom"
 
-  # Set initial charges
-  charges = [[atom.charge] for atom in frame.atoms]
-  hsdinput["Hamiltonian"]["DFTB"]["InitialCharges"] = {}
-  hsdinput["Hamiltonian"]["DFTB"]["InitialCharges"]["AllAtomCharges"] = charges
+  # Set initial charges when restarting from the last MD iteration
+  if restart_from == -1:
+    hsdinput["Hamiltonian"]["DFTB"]["ReadInitialCharges"] = True
+  else:
+    hsdinput["Hamiltonian"]["DFTB"]["ReadInitialCharges"] = False
 
   # Set velocities of atoms
   velocities = [atom.velocity for atom in frame.atoms]
