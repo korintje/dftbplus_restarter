@@ -8,6 +8,7 @@ HSD_FILENAME = "dftb_in.hsd"
 XYZ_FILENAME = "geo_end.xyz"
 GEN_FILENAME = "geo_end.gen"
 CHARGE_FILENAMES = ["charges.bin", "charges.dat"]
+OUT_FILENAME = "md.out"
 THIS_FILENAME = os.path.basename(__file__)
 
 
@@ -27,6 +28,7 @@ class MDFrame():
     self.atom_count = atom_count
     self.comment = comment
     self.atoms = atoms
+    self.thermostat_state = {}
   
   @classmethod
   def from_xyz_lines(cls, lines, iter_from=0, add_comment=""):
@@ -46,6 +48,37 @@ class MDFrame():
         )
       )
     return MDFrame(iter_num, atom_count, comment, atoms)
+    
+  def load_thermostat(self, out_filepath):
+    """load internal state of the thermostat chain from out file
+    x{}: positions, v{}: velocities, and g{}: forces 
+    """
+    with open(out_filepath, "r") as f:
+      lines = f.read().splitlines()
+      sep_idxs = []
+      for i, line in enumerate(lines):
+        if line[:8] == "MD step:":
+          sep_idxs.append(i)
+      iter_lines_list = []
+      for i, idx in enumerate(sep_idxs + [-1]):
+        if i != 0:
+          iter_lines_list.append(lines[sep_idxs[i-1]:idx])
+      iter_lines = iter_lines_list[self.iter_num]
+      for i, iter_line in enumerate(iter_lines):
+        if iter_line.strip()[:2] == "x:":
+          x_idx = i + 1
+        if iter_line.strip()[:2] == "v:":
+          v_idx = i + 1
+        if iter_line.strip()[:2] == "g:":
+          g_idx = i + 1
+      thermostat_x = iter_lines[x_idx].strip().split()
+      thermostat_v = iter_lines[v_idx].strip().split()
+      thermostat_g = iter_lines[g_idx].strip().split()
+      self.thermostat_state = {
+        "x": [float(x) for x in thermostat_x],
+        "v": [float(v) for v in thermostat_v],
+        "g": [float(g) for g in thermostat_g],
+      }
 
 
 class MDTrajectory():
@@ -236,6 +269,13 @@ def make_files(
     if k == "VelocityVerlet":
       hsdinput["Driver"][k]["Velocities"] = velocities
       hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
+  
+  # Specifies the internal state of the thermostat chain if thermostat is set
+  if "VelocityVerlet" in hsdinput["Driver"]:
+    if "Thermostat" in hsdinput["Driver"]["VelocityVerlet"]:
+      if "NoseHoover" in hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]:
+        frame.load_thermostat(OUT_FILENAME)
+        hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]["NoseHoover"]["Restart"] = frame.thermostat_state
 
   # Update hsd input file
   hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
