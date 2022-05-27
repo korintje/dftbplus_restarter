@@ -55,30 +55,27 @@ class MDFrame():
     """
     with open(out_filepath, "r") as f:
       lines = f.read().splitlines()
-      sep_idxs = []
-      for i, line in enumerate(lines):
-        if line[:8] == "MD step:":
-          sep_idxs.append(i)
-      iter_lines_list = []
-      for i, idx in enumerate(sep_idxs + [-1]):
-        if i != 0:
-          iter_lines_list.append(lines[sep_idxs[i-1]:idx])
-      iter_lines = iter_lines_list[self.iter_num]
-      for i, iter_line in enumerate(iter_lines):
-        if iter_line.strip()[:2] == "x:":
-          x_idx = i + 1
-        if iter_line.strip()[:2] == "v:":
-          v_idx = i + 1
-        if iter_line.strip()[:2] == "g:":
-          g_idx = i + 1
-      thermostat_x = iter_lines[x_idx].strip().split()
-      thermostat_v = iter_lines[v_idx].strip().split()
-      thermostat_g = iter_lines[g_idx].strip().split()
-      self.thermostat_state = {
-        "x": [float(x) for x in thermostat_x],
-        "v": [float(v) for v in thermostat_v],
-        "g": [float(g) for g in thermostat_g],
-      }
+    sep_idxs = []
+    for i, line in enumerate(lines):
+      if line.strip()[:8] == "MD step:":
+        sep_idxs.append(i)
+    iter_lines_list = []
+    for i, idx in enumerate(sep_idxs + [-1]):
+      if i != 0:
+        iter_lines_list.append(lines[sep_idxs[i-1]:idx])
+    iter_lines = iter_lines_list[self.iter_num]
+    for i, line in enumerate(iter_lines):
+      if line.strip()[:2] == "x:":
+        xi = i + 1
+      elif line.strip()[:2] == "v:":
+        vi = i + 1
+      elif line.strip()[:2] == "g:":
+        gi = i + 1
+    self.thermostat_state = {
+      "x": [float(x) for x in iter_lines[xi].strip().split()],
+      "v": [float(v) for v in iter_lines[vi].strip().split()],
+      "g": [float(g) for g in iter_lines[gi].strip().split()],
+    }
 
 
 class MDTrajectory():
@@ -265,24 +262,17 @@ def make_files(
 
   # Set velocities of atoms
   velocities = [atom.velocity for atom in frame.atoms]
-  for k in hsdinput["Driver"].keys():
-    if k == "VelocityVerlet":
-      hsdinput["Driver"][k]["Velocities"] = velocities
-      hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
-  
-  # Set thermostat settings
   if "VelocityVerlet" in hsdinput["Driver"]:
+    hsdinput["Driver"]["VelocityVerlet"]["Velocities"] = velocities
+    hsdinput["Driver"]["VelocityVerlet"]["Velocities.attrib"] = "AA/ps"
+  
+    # Set thermostat settings
     if "Thermostat" in hsdinput["Driver"]["VelocityVerlet"]:
-      # If thermostat is 'Nose-Hoover', the internal state at given MD iter will be copied.
       if "NoseHoover" in hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]:
         frame.load_thermostat(OUT_FILENAME)
         hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]["NoseHoover"]["Restart"] = frame.thermostat_state
-      # If thermostat is 'None', the InitialTemperature will be removed.
       elif "None" in hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]:
         hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]["None"].pop("InitialTemperature", None)
-      # Else (Berendsen or Andersen), nothing will be changed in the thermostat setting.
-      else:
-        pass
 
   # Update hsd input file
   hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
