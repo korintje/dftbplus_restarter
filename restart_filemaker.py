@@ -270,12 +270,19 @@ def make_files(
       hsdinput["Driver"][k]["Velocities"] = velocities
       hsdinput["Driver"][k]["Velocities.attrib"] = "AA/ps"
   
-  # Specifies the internal state of the thermostat chain if thermostat is set
+  # Set thermostat settings
   if "VelocityVerlet" in hsdinput["Driver"]:
     if "Thermostat" in hsdinput["Driver"]["VelocityVerlet"]:
+      # If thermostat is 'Nose-Hoover', the internal state at given MD iter will be copied.
       if "NoseHoover" in hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]:
         frame.load_thermostat(OUT_FILENAME)
         hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]["NoseHoover"]["Restart"] = frame.thermostat_state
+      # If thermostat is 'None', the InitialTemperature will be removed.
+      elif "None" in hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]:
+        hsdinput["Driver"]["VelocityVerlet"]["Thermostat"]["None"].pop("InitialTemperature", None)
+      # Else (Berendsen or Andersen), nothing will be changed in the thermostat setting.
+      else:
+        pass
 
   # Update hsd input file
   hsd.dump(hsdinput, os.path.join(restart_dirname, HSD_FILENAME))
