@@ -53,6 +53,7 @@ class MDFrame():
     """load internal state of the thermostat chain from out file
     x{}: positions, v{}: velocities, and g{}: forces 
     """
+    xvg_found = [False, False, False]
     with open(out_filepath, "r") as f:
       while True:
         line = f.readline().strip()
@@ -64,17 +65,26 @@ class MDFrame():
               if line.startswith("x:"):
                 xs = f.readline().strip().split()
                 self.thermostat_state["x"] = [float(x) for x in xs]
+                xvg_found[0] = True
               elif line.startswith("v:"):
                 vs = f.readline().strip().split()
                 self.thermostat_state["v"] = [float(v) for v in vs]
+                xvg_found[1] = True
               elif line.startswith("g:"):
                 gs = f.readline().strip().split()
                 self.thermostat_state["g"] = [float(g) for g in gs]
+                xvg_found[2] = True
               elif line.startswith("MD step:") or not line:
                 break
+              if not all(xvg_found):
+                raise Exception(
+                  "Thermostat parameters not found in the MD step"
+                )
             break
-          elif not line:
-            break
+        elif not line:
+          raise Exception(
+            "Specified MD step not found in {}".format(OUT_FILENAME)
+          )
 
 
 class MDTrajectory():
