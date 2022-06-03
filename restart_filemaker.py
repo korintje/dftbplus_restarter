@@ -54,28 +54,27 @@ class MDFrame():
     x{}: positions, v{}: velocities, and g{}: forces 
     """
     with open(out_filepath, "r") as f:
-      lines = f.read().splitlines()
-    sep_idxs = []
-    for i, line in enumerate(lines):
-      if line.strip()[:8] == "MD step:":
-        sep_idxs.append(i)
-    iter_lines_list = []
-    for i, idx in enumerate(sep_idxs + [-1]):
-      if i != 0:
-        iter_lines_list.append(lines[sep_idxs[i-1]:idx])
-    iter_lines = iter_lines_list[self.iter_num]
-    for i, line in enumerate(iter_lines):
-      if line.strip()[:2] == "x:":
-        xi = i + 1
-      elif line.strip()[:2] == "v:":
-        vi = i + 1
-      elif line.strip()[:2] == "g:":
-        gi = i + 1
-    self.thermostat_state = {
-      "x": [float(x) for x in iter_lines[xi].strip().split()],
-      "v": [float(v) for v in iter_lines[vi].strip().split()],
-      "g": [float(g) for g in iter_lines[gi].strip().split()],
-    }
+      while True:
+        line = f.readline().strip()
+        if line.startswith("MD step:"):
+          iter_num = int(line[8:].strip().split()[0])
+          if iter_num == self.iter_num:
+            while True:
+              line = f.readline().strip()
+              if line.startswith("x:"):
+                xs = f.readline().strip().split()
+                self.thermostat_state["x"] = [float(x) for x in xs]
+              elif line.startswith("v:"):
+                vs = f.readline().strip().split()
+                self.thermostat_state["v"] = [float(v) for v in vs]
+              elif line.startswith("g:"):
+                gs = f.readline().strip().split()
+                self.thermostat_state["g"] = [float(g) for g in gs]
+              elif line.startswith("MD step:") or not line:
+                break
+            break
+          elif not line:
+            break
 
 
 class MDTrajectory():
