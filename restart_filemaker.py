@@ -49,41 +49,43 @@ class MDFrame():
       )
     return MDFrame(iter_num, atom_count, comment, atoms)
     
-  def load_thermostat(self, out_filepath):
+  def load_thermostat(self, filepath):
     """load internal state of the thermostat chain from out file
     x{}: positions, v{}: velocities, and g{}: forces 
     """
-    xvg_found = [False, False, False]
-    with open(out_filepath, "r") as f:
+    thermostat_state = {}
+    with open(filepath, "r") as f:
       while True:
         line = f.readline().strip()
-        if line.startswith("MD step:"):
-          iter_num = int(line[8:].strip().split()[0])
-          if iter_num == self.iter_num:
-            while True:
-              line = f.readline().strip()
-              if line.startswith("x:"):
-                xs = f.readline().strip().split()
-                self.thermostat_state["x"] = [float(x) for x in xs]
-                xvg_found[0] = True
-              elif line.startswith("v:"):
-                vs = f.readline().strip().split()
-                self.thermostat_state["v"] = [float(v) for v in vs]
-                xvg_found[1] = True
-              elif line.startswith("g:"):
-                gs = f.readline().strip().split()
-                self.thermostat_state["g"] = [float(g) for g in gs]
-                xvg_found[2] = True
-              elif line.startswith("MD step:") or not line:
-                break
-              if not all(xvg_found):
-                raise Exception(
-                  "Thermostat parameters not found in the MD step"
-                )
+        if not line.startswith("MD step:"):
+          continue
+        iter_num = int(line[8:].strip().split()[0])
+        if iter_num != self.iter_num:
+          if not line:
+            raise Exception(
+              "Specified MD step not found in {}".format(filepath)
+            )
+          else:
+            continue
+        while True:
+          line = f.readline().strip()
+          if line.startswith("x:"):
+            xs = f.readline().strip().split()
+            thermostat_state["x"] = [float(x) for x in xs]
+          elif line.startswith("v:"):
+            vs = f.readline().strip().split()
+            thermostat_state["v"] = [float(v) for v in vs]
+          elif line.startswith("g:"):
+            gs = f.readline().strip().split()
+            thermostat_state["g"] = [float(g) for g in gs]
+          elif line.startswith("MD step:") or not line:
             break
-        elif not line:
+        if len(thermostat_state.keys()) == 3:
+          self.thermostat_state = thermostat_state
+          break
+        else:
           raise Exception(
-            "Specified MD step not found in {}".format(OUT_FILENAME)
+            "Thermostat parameters not found in the MD step"
           )
 
 
